@@ -6,12 +6,14 @@ use PhpRbacBundle\Entity\Node;
 use PhpRbacBundle\Exception\RbacException;
 use PhpRbacBundle\Core\Manager\NodeManagerInterface;
 use Doctrine\DBAL\Platforms\PostgreSQLPlatform;
+use Doctrine\DBAL\Platforms\SqlitePlatform;
 
 trait NodeEntityTrait
 {
     public function deleteNode(int $nodeId): bool
     {
-        if ($nodeId == NodeManagerInterface::ROOT_ID) {
+        if ($nodeId == NodeManagerInterface::ROOT_ID)
+        {
             throw new RbacException("The Root Node cannot be deleted");
         }
 
@@ -45,7 +47,8 @@ trait NodeEntityTrait
 
     public function deleteSubtree(int $nodeId): bool
     {
-        if ($nodeId == NodeManagerInterface::ROOT_ID) {
+        if ($nodeId == NodeManagerInterface::ROOT_ID)
+        {
             throw new RbacException("The Root Node cannot be deleted");
         }
 
@@ -82,7 +85,10 @@ trait NodeEntityTrait
         $tableName = $this->getClassMetadata()
             ->getTableName();
         $parts = explode("/", $pathCmpl);
-        if ($this->getEntityManager()->getConnection()->getDatabasePlatform() instanceof PostgreSQLPlatform) {
+        $platform = $this->getEntityManager()->getConnection()->getDatabasePlatform();
+
+        if ($platform instanceof PostgreSQLPlatform)
+        {
             $sql = "
             SELECT
                 node.id,
@@ -98,7 +104,75 @@ trait NodeEntityTrait
             HAVING
                 string_agg(parent.code, '/' ORDER BY parent.tree_left) = :path
                 ";
-        } else {
+
+            $pdo = $this->getEntityManager()->getConnection();
+            $query = $pdo->prepare($sql);
+            $finalPart = end($parts);
+            $query->bindValue(":code", strtolower($finalPart));
+            $query->bindValue(":path", $pathCmpl);
+            $result = $query->executeQuery();
+
+            if ($result->rowCount() == 0)
+            {
+                throw new $classException($path);
+            }
+
+            $row = $result->fetchAssociative();
+            return $row['id'];
+        }
+        elseif ($platform instanceof SqlitePlatform)
+        {
+            // For SQLite, we'll use a simpler approach since GROUP_CONCAT doesn't preserve order reliably
+            // First, find all nodes with the matching code
+            $sql = "
+            SELECT DISTINCT node.id
+            FROM {$tableName} as node
+            WHERE node.code = :code
+            ";
+
+            $pdo = $this->getEntityManager()->getConnection();
+            $query = $pdo->prepare($sql);
+            $finalPart = end($parts);
+            $query->bindValue(":code", strtolower($finalPart));
+            $result = $query->executeQuery();
+
+            // Check each candidate node to see if its path matches
+            while ($row = $result->fetchAssociative())
+            {
+                $nodeId = $row['id'];
+
+                // Build the path for this node
+                $pathSql = "
+                SELECT parent.code
+                FROM {$tableName} as parent
+                INNER JOIN {$tableName} as node ON node.tree_left BETWEEN parent.tree_left AND parent.tree_right
+                WHERE node.id = :nodeId
+                ORDER BY parent.tree_left
+                ";
+
+                $pathQuery = $pdo->prepare($pathSql);
+                $pathQuery->bindValue(":nodeId", $nodeId);
+                $pathResult = $pathQuery->executeQuery();
+
+                $pathParts = [];
+                while ($pathRow = $pathResult->fetchAssociative())
+                {
+                    $pathParts[] = $pathRow['code'];
+                }
+
+                $fullPath = implode('/', $pathParts);
+                if ($fullPath === $pathCmpl)
+                {
+                    return $nodeId;
+                }
+            }
+
+            // If we get here, no matching path was found
+            throw new $classException($path);
+        }
+        else
+        {
+            // MySQL
             $sql = "
             SELECT
                 node.id,
@@ -114,34 +188,45 @@ trait NodeEntityTrait
             HAVING
                 path = :path
         ";
+
+            $pdo = $this->getEntityManager()->getConnection();
+            $query = $pdo->prepare($sql);
+            $finalPart = end($parts);
+            $query->bindValue(":code", strtolower($finalPart));
+            $query->bindValue(":path", $pathCmpl);
+            $result = $query->executeQuery();
+
+            if ($result->rowCount() == 0)
+            {
+                throw new $classException($path);
+            }
+
+            $row = $result->fetchAssociative();
+            return $row['id'];
         }
-
-        $pdo = $this->getEntityManager()
-            ->getConnection();
-        $query = $pdo->prepare($sql);
-        $finalPart = end($parts);
-        $query->bindValue(":code", strtolower($finalPart));
-        $query->bindValue(":path", $pathCmpl);
-        $result = $query->executeQuery();
-
-        if ($result->rowCount() == 0) {
-            throw new $classException($path);
-        }
-
-        $row = $result->fetchAssociative();
-        return $row['id'];
     }
 
     public function reset()
     {
         $tableName = $this->getClassMetadata()
             ->getTableName();
-        $sql = "DELETE FROM {$tableName} WHERE id > 1;";
-        $sql .= "UPDATE {$tableName} SET tree_left = 0, tree_right = 1 WHERE id = 1;";
-        $sql .= "ALTER TABLE {$tableName} AUTO_INCREMENT = 2;";
-        $this->getEntityManager()
-            ->getConnection()
-            ->executeQuery($sql);
+        $platform = $this->getEntityManager()->getConnection()->getDatabasePlatform();
+        $connection = $this->getEntityManager()->getConnection();
+
+        if ($platform instanceof SqlitePlatform)
+        {
+            // SQLite doesn't support AUTO_INCREMENT reset directly, but sequence resets when table is empty
+            $connection->executeQuery("DELETE FROM {$tableName} WHERE id > 1");
+            $connection->executeQuery("UPDATE {$tableName} SET tree_left = 0, tree_right = 1 WHERE id = 1");
+            // For SQLite, we don't need to reset AUTO_INCREMENT as it handles it automatically
+        }
+        else
+        {
+            // MySQL/PostgreSQL
+            $connection->executeQuery("DELETE FROM {$tableName} WHERE id > 1");
+            $connection->executeQuery("UPDATE {$tableName} SET tree_left = 0, tree_right = 1 WHERE id = 1");
+            $connection->executeQuery("ALTER TABLE {$tableName} AUTO_INCREMENT = 2");
+        }
     }
 
     public function updateForAdd(int $parentId, string $nodeClass, string $code, string $description): Node
@@ -194,7 +279,8 @@ trait NodeEntityTrait
         $query->setParameter(':nodeId', $nodeId);
         $result = $query->getResult();
 
-        if (empty($result)) {
+        if (empty($result))
+        {
             throw new $rbacExceptionClass();
         }
 
