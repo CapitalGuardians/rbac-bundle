@@ -26,40 +26,48 @@ final class SecurityExtension extends AbstractExtension
 {
     public function __construct(
         private RbacInterface $rbacInterface,
-        private Security $security
+        private ?Security $security = null
     ) {
     }
 
     public function hasPermission(string $permission): bool
     {
-        if (empty($this->security->getUser())) {
+        if (!$this->security || empty($this->security->getUser()))
+        {
             return false;
         }
 
-        try {
+        try
+        {
             return $this->rbacInterface->hasPermission(
                 $permission,
                 $this->security->getUser()
                     ->getId()
             );
-        } catch (RbacException) {
+        }
+        catch (RbacException)
+        {
             return false;
         }
     }
 
     public function hasRole(string $role): bool
     {
-        if (empty($this->security->getUser())) {
+        if (!$this->security || empty($this->security->getUser()))
+        {
             return false;
         }
 
-        try {
+        try
+        {
             return $this->rbacInterface->hasRole(
                 $role,
                 $this->security->getUser()
                     ->getId()
             );
-        } catch (RbacException) {
+        }
+        catch (RbacException)
+        {
             return false;
         }
     }

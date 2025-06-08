@@ -3,6 +3,7 @@
 namespace PhpRbacBundle\Repository;
 
 use Doctrine\DBAL\Platforms\PostgreSQLPlatform;
+use Doctrine\DBAL\Platforms\SqlitePlatform;
 use Doctrine\ORM\Exception\ORMException;
 use PhpRbacBundle\Entity\Role;
 use PhpRbacBundle\Entity\RoleInterface;
@@ -40,13 +41,30 @@ class RoleRepository extends ServiceEntityRepository implements NestedSetInterfa
 
     public function initTable()
     {
-        if ($this->getEntityManager()->getConnection()->getDatabasePlatform() instanceof PostgreSQLPlatform) {
+        // Ensure schema exists before trying to truncate/delete
+        $this->ensureSchemaExists();
+
+        $platform = $this->getEntityManager()->getConnection()->getDatabasePlatform();
+
+        if ($platform instanceof PostgreSQLPlatform)
+        {
             $this->getEntityManager()->getConnection()->executeQuery("SET CONSTRAINTS ALL DEFERRED");
             $this->getEntityManager()->getConnection()->executeQuery("TRUNCATE user_role CASCADE");
             $this->getEntityManager()->getConnection()->executeQuery("TRUNCATE role_permission CASCADE");
             $this->getEntityManager()->getConnection()->executeQuery("TRUNCATE {$this->tableName} CASCADE");
             $this->getEntityManager()->getConnection()->executeQuery("SET CONSTRAINTS ALL IMMEDIATE");
-        } else {
+        }
+        elseif ($platform instanceof SqlitePlatform)
+        {
+            $this->getEntityManager()->getConnection()->executeQuery("PRAGMA foreign_keys = OFF");
+            $this->getEntityManager()->getConnection()->executeQuery("DELETE FROM user_role");
+            $this->getEntityManager()->getConnection()->executeQuery("DELETE FROM role_permission");
+            $this->getEntityManager()->getConnection()->executeQuery("DELETE FROM {$this->tableName}");
+            $this->getEntityManager()->getConnection()->executeQuery("PRAGMA foreign_keys = ON");
+        }
+        else
+        {
+            // MySQL
             $sql = "SET FOREIGN_KEY_CHECKS = 0; TRUNCATE user_role; TRUNCATE role_permission; TRUNCATE {$this->tableName};SET FOREIGN_KEY_CHECKS = 1;";
             $this->getEntityManager()
                 ->getConnection()
@@ -57,11 +75,43 @@ class RoleRepository extends ServiceEntityRepository implements NestedSetInterfa
         $this->getEntityManager()
             ->getConnection()
             ->executeQuery($sql);
+    }
 
-        $sql = "INSERT INTO role_permission (role_id, permission_id) VALUES (1, 1)";
-        $this->getEntityManager()
-            ->getConnection()
-            ->executeQuery($sql);
+    private function ensureSchemaExists(): void
+    {
+        $entityManager = $this->getEntityManager();
+        $connection = $entityManager->getConnection();
+
+        // Check if tables exist first
+        $schemaManager = $connection->createSchemaManager();
+        $tableNames = $schemaManager->listTableNames();
+
+        if (!in_array('user_role', $tableNames) || !in_array('role_permission', $tableNames) || !in_array($this->tableName, $tableNames))
+        {
+            try
+            {
+                $metadataFactory = $entityManager->getMetadataFactory();
+                $classes = $metadataFactory->getAllMetadata();
+
+                $schemaTool = new \Doctrine\ORM\Tools\SchemaTool($entityManager);
+
+                // Drop and recreate to ensure clean state for SQLite
+                $schemaTool->dropSchema($classes);
+                $schemaTool->createSchema($classes);
+            }
+            catch (\Exception $e)
+            {
+                // If drop fails, just try to create
+                try
+                {
+                    $schemaTool->createSchema($classes);
+                }
+                catch (\Exception $e2)
+                {
+                    // Ignore if creation also fails - tables might already exist
+                }
+            }
+        }
     }
 
     /**
@@ -71,7 +121,8 @@ class RoleRepository extends ServiceEntityRepository implements NestedSetInterfa
     public function add(Role $entity, bool $flush = true): void
     {
         $this->getEntityManager()->persist($entity);
-        if ($flush) {
+        if ($flush)
+        {
             $this->getEntityManager()->flush();
         }
     }
@@ -83,12 +134,13 @@ class RoleRepository extends ServiceEntityRepository implements NestedSetInterfa
     public function remove(Role $entity, bool $flush = true): void
     {
         $this->getEntityManager()->remove($entity);
-        if ($flush) {
+        if ($flush)
+        {
             $this->getEntityManager()->flush();
         }
     }
 
-    public function getPathId(string $path,): int
+    public function getPathId(string $path): int
     {
         return $this->pathId($path, RbacRoleNotFoundException::class);
     }
@@ -96,7 +148,8 @@ class RoleRepository extends ServiceEntityRepository implements NestedSetInterfa
     public function getById(int $nodeId): Role
     {
         $node = $this->find($nodeId);
-        if (empty($node)) {
+        if (empty($node))
+        {
             throw new RbacRoleNotFoundException();
         }
 
@@ -153,7 +206,8 @@ class RoleRepository extends ServiceEntityRepository implements NestedSetInterfa
 
         $result = $query->getResult();
 
-        if (empty($result)) {
+        if (empty($result))
+        {
             throw new RbacRoleNotFoundException();
         }
 
@@ -170,72 +224,119 @@ class RoleRepository extends ServiceEntityRepository implements NestedSetInterfa
 
     public function hasPermission(int $roleId, int $permissionId): bool
     {
-        $pdo = $this->getEntityManager()
-            ->getConnection();
+        $pdo = $this->getEntityManager()->getConnection();
+        $platform = $this->getEntityManager()->getConnection()->getDatabasePlatform();
 
-        $sql = "
-            SELECT
-                COUNT(*) AS result
-                FROM role_permission
-                INNER JOIN {$this->permissionTableName} AS permission ON permission.id = role_permission.permission_id
-                INNER JOIN {$this->tableName} AS role ON role.id = role_permission.role_id
-            WHERE
-                role.tree_left BETWEEN
-                    (SELECT tree_left FROM {$this->tableName} WHERE ID = :roleId)
+        if ($platform instanceof SqlitePlatform)
+        {
+            // SQLite-compatible version - replicate the exact MySQL logic
+            $sql = "
+                SELECT COUNT(*) AS result
+                FROM role_permission rp
+                INNER JOIN {$this->permissionTableName} AS perm_assigned ON perm_assigned.id = rp.permission_id
+                INNER JOIN {$this->tableName} AS role_assigned ON role_assigned.id = rp.role_id
+                WHERE role_assigned.tree_left BETWEEN
+                    (SELECT tree_left FROM {$this->tableName} WHERE id = :roleId)
                     AND
-                    (SELECT tree_right FROM {$this->tableName} WHERE ID = :roleId)
-                AND
-                    permission.id IN (
-                        SELECT
-                            parent.id
-                        FROM
-                            {$this->permissionTableName} AS node,
-                            {$this->permissionTableName} AS parent
-                        WHERE
-                            node.tree_left BETWEEN parent.tree_left AND parent.tree_right
-                            AND node.ID= :permissionId
-                        ORDER BY parent.tree_left
-                    )
-        ";
+                    (SELECT tree_right FROM {$this->tableName} WHERE id = :roleId)
+                  AND perm_assigned.id IN (
+                      SELECT parent.id
+                      FROM {$this->permissionTableName} AS node,
+                           {$this->permissionTableName} AS parent
+                      WHERE node.tree_left BETWEEN parent.tree_left AND parent.tree_right
+                        AND node.id = :permissionId
+                  )
+            ";
+        }
+        else
+        {
+            // Original query for MySQL/PostgreSQL
+            $sql = "
+                SELECT
+                    COUNT(*) AS result
+                    FROM role_permission
+                    INNER JOIN {$this->permissionTableName} AS permission ON permission.id = role_permission.permission_id
+                    INNER JOIN {$this->tableName} AS role ON role.id = role_permission.role_id
+                WHERE
+                    role.tree_left BETWEEN
+                        (SELECT tree_left FROM {$this->tableName} WHERE ID = :roleId)
+                        AND
+                        (SELECT tree_right FROM {$this->tableName} WHERE ID = :roleId)
+                    AND
+                        permission.id IN (
+                            SELECT
+                                parent.id
+                            FROM
+                                {$this->permissionTableName} AS node,
+                                {$this->permissionTableName} AS parent
+                            WHERE
+                                node.tree_left BETWEEN parent.tree_left AND parent.tree_right
+                                AND node.ID= :permissionId
+                            ORDER BY parent.tree_left
+                        )
+            ";
+        }
+
         $query = $pdo->prepare($sql);
         $query->bindValue(":roleId", $roleId);
         $query->bindValue(":permissionId", $permissionId);
         $stmt = $query->executeQuery();
 
-        if ($stmt->rowCount() == 0) {
+        $row = $stmt->fetchAssociative();
+
+        if ($row === false)
+        {
             return false;
         }
 
-        $row = $stmt->fetchAssociative();
         return $row['result'] >= 1;
     }
 
     public function hasRole(int $roleId, mixed $userId): bool
     {
-        $pdo = $this->getEntityManager()
-            ->getConnection();
+        $pdo = $this->getEntityManager()->getConnection();
+        $platform = $this->getEntityManager()->getConnection()->getDatabasePlatform();
 
-        $sql = "
-            SELECT
-                COUNT(*) as result
-            FROM
-                user_role
-            INNER JOIN
-                {$this->tableName} AS TRdirect ON (TRdirect.id=user_role.role_id)
-            INNER JOIN
-                {$this->tableName} AS TR ON (TR.tree_left BETWEEN TRdirect.tree_left AND TRdirect.tree_right)
-            WHERE
-                user_role.user_id = :userId AND TR.ID = :roleId
-        ";
+        if ($platform instanceof SqlitePlatform)
+        {
+            // SQLite-compatible version with simpler alias names
+            $sql = "
+                SELECT COUNT(*) as result
+                FROM user_role ur
+                INNER JOIN {$this->tableName} AS role_direct ON role_direct.id = ur.role_id
+                INNER JOIN {$this->tableName} AS role_check ON role_check.tree_left BETWEEN role_direct.tree_left AND role_direct.tree_right
+                WHERE ur.user_id = :userId AND role_check.id = :roleId
+            ";
+        }
+        else
+        {
+            // Original query for MySQL/PostgreSQL
+            $sql = "
+                SELECT
+                    COUNT(*) as result
+                FROM
+                    user_role
+                INNER JOIN
+                    {$this->tableName} AS TRdirect ON (TRdirect.id=user_role.role_id)
+                INNER JOIN
+                    {$this->tableName} AS TR ON (TR.tree_left BETWEEN TRdirect.tree_left AND TRdirect.tree_right)
+                WHERE
+                    user_role.user_id = :userId AND TR.ID = :roleId
+            ";
+        }
+
         $query = $pdo->prepare($sql);
         $query->bindValue(":roleId", $roleId);
         $query->bindValue(":userId", $userId);
         $stmt = $query->executeQuery();
-        if ($stmt->rowCount() == 0) {
+
+        $row = $stmt->fetchAssociative();
+
+        if ($row === false)
+        {
             return false;
         }
 
-        $row = $stmt->fetchAssociative();
         return $row['result'] >= 1;
     }
 

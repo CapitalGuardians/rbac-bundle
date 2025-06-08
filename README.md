@@ -53,6 +53,37 @@ Add the PhpRbacBundle\Entity\UserRoleTrait inside the User entity class to add t
 
 Update the database schema with doctrine migration or doctrine schema update to create all the tables
 
+## Database Support
+
+This bundle supports multiple database platforms:
+
+- **MySQL** - Full support (original implementation)
+- **PostgreSQL** - Full support  
+- **SQLite** - Full support (added in v2.0+)
+
+### SQLite Configuration
+
+To use SQLite with this bundle, configure your `DATABASE_URL` in `.env`:
+
+```bash
+# For file-based SQLite database
+DATABASE_URL="sqlite:///var/data.db"
+
+# For in-memory SQLite database (testing)
+DATABASE_URL="sqlite:///:memory:"
+```
+
+The bundle automatically detects the database platform and uses appropriate SQL syntax and operations for each database type.
+
+### Testing with SQLite
+
+The bundle includes a test suite that can run with SQLite for fast, isolated testing:
+
+```bash
+# Run tests with SQLite in-memory database
+DATABASE_URL="sqlite:///:memory:" php bin/phpunit
+```
+
 ## Configuration
 
 ### Prepare Symfony
