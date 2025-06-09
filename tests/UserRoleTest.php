@@ -211,13 +211,13 @@ class UserRoleTest extends KernelTestCase
         {
             // Temporarily disable foreign key constraints for SQLite
             $connection->executeQuery("PRAGMA foreign_keys = OFF");
-            $sql = "INSERT INTO user_role (user_id, role_id) VALUES (:userId, :roleId)";
+            $sql = "INSERT INTO user_roles (user_id, role_id) VALUES (:userId, :roleId)";
             $connection->executeQuery($sql, ['userId' => $userId, 'roleId' => $roleId]);
             $connection->executeQuery("PRAGMA foreign_keys = ON");
         }
         else
         {
-            $sql = "INSERT INTO user_role (user_id, role_id) VALUES (:userId, :roleId)";
+            $sql = "INSERT INTO user_roles (user_id, role_id) VALUES (:userId, :roleId)";
             $connection->executeQuery($sql, ['userId' => $userId, 'roleId' => $roleId]);
         }
     }

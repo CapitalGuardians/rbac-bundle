@@ -50,21 +50,21 @@ class PermissionRepository extends ServiceEntityRepository implements NestedSetI
         if ($platform instanceof PostgreSQLPlatform)
         {
             $this->getEntityManager()->getConnection()->executeQuery("SET CONSTRAINTS ALL DEFERRED");
-            $this->getEntityManager()->getConnection()->executeQuery("TRUNCATE role_permission CASCADE");
+            $this->getEntityManager()->getConnection()->executeQuery("TRUNCATE role_permissions CASCADE");
             $this->getEntityManager()->getConnection()->executeQuery("TRUNCATE {$this->tableName} CASCADE");
             $this->getEntityManager()->getConnection()->executeQuery("SET CONSTRAINTS ALL IMMEDIATE");
         }
         elseif ($platform instanceof SqlitePlatform)
         {
             $this->getEntityManager()->getConnection()->executeQuery("PRAGMA foreign_keys = OFF");
-            $this->getEntityManager()->getConnection()->executeQuery("DELETE FROM role_permission");
+            $this->getEntityManager()->getConnection()->executeQuery("DELETE FROM role_permissions");
             $this->getEntityManager()->getConnection()->executeQuery("DELETE FROM {$this->tableName}");
             $this->getEntityManager()->getConnection()->executeQuery("PRAGMA foreign_keys = ON");
         }
         else
         {
             // MySQL
-            $sql = "SET FOREIGN_KEY_CHECKS = 0; TRUNCATE role_permission; TRUNCATE {$this->tableName}; SET FOREIGN_KEY_CHECKS = 1";
+            $sql = "SET FOREIGN_KEY_CHECKS = 0; TRUNCATE role_permissions; TRUNCATE {$this->tableName}; SET FOREIGN_KEY_CHECKS = 1";
             $this->getEntityManager()
                 ->getConnection()
                 ->executeQuery($sql);
@@ -85,7 +85,7 @@ class PermissionRepository extends ServiceEntityRepository implements NestedSetI
         $schemaManager = $connection->createSchemaManager();
         $tableNames = $schemaManager->listTableNames();
 
-        if (!in_array('role_permission', $tableNames) || !in_array($this->tableName, $tableNames))
+        if (!in_array('role_permissions', $tableNames) || !in_array($this->tableName, $tableNames))
         {
             try
             {
@@ -228,10 +228,10 @@ class PermissionRepository extends ServiceEntityRepository implements NestedSetI
             // SQLite-compatible version - simpler query structure
             $sql = "
                 SELECT COUNT(*) AS result
-                FROM user_role ur
+                FROM user_roles ur
                 INNER JOIN {$this->roleTableName} AS role_direct ON role_direct.id = ur.role_id
                 INNER JOIN {$this->roleTableName} AS role_inherited ON role_inherited.tree_left BETWEEN role_direct.tree_left AND role_direct.tree_right
-                INNER JOIN role_permission AS rp ON rp.role_id = role_inherited.id
+                INNER JOIN role_permissions AS rp ON rp.role_id = role_inherited.id
                 INNER JOIN {$this->tableName} AS perm_assigned ON perm_assigned.id = rp.permission_id
                 INNER JOIN {$this->tableName} AS perm_check ON perm_check.tree_left BETWEEN perm_assigned.tree_left AND perm_assigned.tree_right
                 WHERE ur.user_id = :userId AND perm_check.id = :permissionId
@@ -244,9 +244,9 @@ class PermissionRepository extends ServiceEntityRepository implements NestedSetI
                 SELECT
                     COUNT(*) AS result
                 FROM
-                    user_role
+                    user_roles
                 INNER JOIN
-                    {$this->roleTableName} AS TRdirect ON TRdirect.ID=user_role.role_id
+                    {$this->roleTableName} AS TRdirect ON TRdirect.ID=user_roles.role_id
                 INNER JOIN
                     {$this->roleTableName} AS TR ON TR.tree_left BETWEEN TRdirect.tree_left AND TRdirect.tree_right
                 INNER JOIN
@@ -254,10 +254,10 @@ class PermissionRepository extends ServiceEntityRepository implements NestedSetI
                         INNER JOIN
                         {$this->tableName} AS TP ON TPdirect.tree_left BETWEEN TP.tree_left AND TP.tree_right
                         INNER JOIN
-                            role_permission AS TRel ON TP.ID=TRel.permission_id
+                            role_permissions AS TRel ON TP.ID=TRel.permission_id
                     ) ON TR.ID = TRel.role_id
                 WHERE
-                    user_role.user_id = :userId
+                    user_roles.user_id = :userId
                     AND TPdirect.id = :permissionId
             ";
         }

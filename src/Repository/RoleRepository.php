@@ -49,23 +49,23 @@ class RoleRepository extends ServiceEntityRepository implements NestedSetInterfa
         if ($platform instanceof PostgreSQLPlatform)
         {
             $this->getEntityManager()->getConnection()->executeQuery("SET CONSTRAINTS ALL DEFERRED");
-            $this->getEntityManager()->getConnection()->executeQuery("TRUNCATE user_role CASCADE");
-            $this->getEntityManager()->getConnection()->executeQuery("TRUNCATE role_permission CASCADE");
+            $this->getEntityManager()->getConnection()->executeQuery("TRUNCATE user_roles CASCADE");
+            $this->getEntityManager()->getConnection()->executeQuery("TRUNCATE role_permissions CASCADE");
             $this->getEntityManager()->getConnection()->executeQuery("TRUNCATE {$this->tableName} CASCADE");
             $this->getEntityManager()->getConnection()->executeQuery("SET CONSTRAINTS ALL IMMEDIATE");
         }
         elseif ($platform instanceof SqlitePlatform)
         {
             $this->getEntityManager()->getConnection()->executeQuery("PRAGMA foreign_keys = OFF");
-            $this->getEntityManager()->getConnection()->executeQuery("DELETE FROM user_role");
-            $this->getEntityManager()->getConnection()->executeQuery("DELETE FROM role_permission");
+            $this->getEntityManager()->getConnection()->executeQuery("DELETE FROM user_roles");
+            $this->getEntityManager()->getConnection()->executeQuery("DELETE FROM role_permissions");
             $this->getEntityManager()->getConnection()->executeQuery("DELETE FROM {$this->tableName}");
             $this->getEntityManager()->getConnection()->executeQuery("PRAGMA foreign_keys = ON");
         }
         else
         {
             // MySQL
-            $sql = "SET FOREIGN_KEY_CHECKS = 0; TRUNCATE user_role; TRUNCATE role_permission; TRUNCATE {$this->tableName};SET FOREIGN_KEY_CHECKS = 1;";
+            $sql = "SET FOREIGN_KEY_CHECKS = 0; TRUNCATE user_roles; TRUNCATE role_permissions; TRUNCATE {$this->tableName};SET FOREIGN_KEY_CHECKS = 1;";
             $this->getEntityManager()
                 ->getConnection()
                 ->executeQuery($sql);
@@ -86,7 +86,7 @@ class RoleRepository extends ServiceEntityRepository implements NestedSetInterfa
         $schemaManager = $connection->createSchemaManager();
         $tableNames = $schemaManager->listTableNames();
 
-        if (!in_array('user_role', $tableNames) || !in_array('role_permission', $tableNames) || !in_array($this->tableName, $tableNames))
+        if (!in_array('user_roles', $tableNames) || !in_array('role_permissions', $tableNames) || !in_array($this->tableName, $tableNames))
         {
             try
             {
@@ -232,7 +232,7 @@ class RoleRepository extends ServiceEntityRepository implements NestedSetInterfa
             // SQLite-compatible version - replicate the exact MySQL logic
             $sql = "
                 SELECT COUNT(*) AS result
-                FROM role_permission rp
+                FROM role_permissions rp
                 INNER JOIN {$this->permissionTableName} AS perm_assigned ON perm_assigned.id = rp.permission_id
                 INNER JOIN {$this->tableName} AS role_assigned ON role_assigned.id = rp.role_id
                 WHERE role_assigned.tree_left BETWEEN
@@ -254,9 +254,9 @@ class RoleRepository extends ServiceEntityRepository implements NestedSetInterfa
             $sql = "
                 SELECT
                     COUNT(*) AS result
-                    FROM role_permission
-                    INNER JOIN {$this->permissionTableName} AS permission ON permission.id = role_permission.permission_id
-                    INNER JOIN {$this->tableName} AS role ON role.id = role_permission.role_id
+                    FROM role_permissions
+                    INNER JOIN {$this->permissionTableName} AS permission ON permission.id = role_permissions.permission_id
+                    INNER JOIN {$this->tableName} AS role ON role.id = role_permissions.role_id
                 WHERE
                     role.tree_left BETWEEN
                         (SELECT tree_left FROM {$this->tableName} WHERE ID = :roleId)
@@ -302,7 +302,7 @@ class RoleRepository extends ServiceEntityRepository implements NestedSetInterfa
             // SQLite-compatible version with simpler alias names
             $sql = "
                 SELECT COUNT(*) as result
-                FROM user_role ur
+                FROM user_roles ur
                 INNER JOIN {$this->tableName} AS role_direct ON role_direct.id = ur.role_id
                 INNER JOIN {$this->tableName} AS role_check ON role_check.tree_left BETWEEN role_direct.tree_left AND role_direct.tree_right
                 WHERE ur.user_id = :userId AND role_check.id = :roleId
@@ -315,13 +315,13 @@ class RoleRepository extends ServiceEntityRepository implements NestedSetInterfa
                 SELECT
                     COUNT(*) as result
                 FROM
-                    user_role
+                    user_roles
                 INNER JOIN
-                    {$this->tableName} AS TRdirect ON (TRdirect.id=user_role.role_id)
+                    {$this->tableName} AS TRdirect ON (TRdirect.id=user_roles.role_id)
                 INNER JOIN
                     {$this->tableName} AS TR ON (TR.tree_left BETWEEN TRdirect.tree_left AND TRdirect.tree_right)
                 WHERE
-                    user_role.user_id = :userId AND TR.ID = :roleId
+                    user_roles.user_id = :userId AND TR.ID = :roleId
             ";
         }
 
