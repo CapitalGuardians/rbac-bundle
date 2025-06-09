@@ -11,3 +11,5 @@ composer.lock
 /.phpunit.cache/
 
 .clinerules
+
+.DS_Store

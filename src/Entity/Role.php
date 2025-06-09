@@ -8,14 +8,14 @@ use Doctrine\Common\Collections\Collection;
 #[ORM\MappedSuperclass]
 abstract class Role extends Node implements RoleInterface
 {
-    #[ORM\ManyToMany(targetEntity: PermissionInterface::class, cascade:['persist', 'remove', 'refresh'])]
-    #[ORM\JoinTable(name: "role_permission")]
+    #[ORM\ManyToMany(targetEntity: PermissionInterface::class, cascade: ['persist', 'remove', 'refresh'])]
+    #[ORM\JoinTable(name: "role_permissions")]
     #[ORM\JoinColumn(name: "role_id", referencedColumnName: "id", onDelete: "cascade")]
     #[ORM\InverseJoinColumn(name: "permission_id", referencedColumnName: "id", onDelete: "cascade")]
     private Collection $permissions;
 
     #[ORM\ManyToOne(targetEntity: RoleInterface::class)]
-    #[ORM\JoinColumn(name: 'parent_id', referencedColumnName: 'id', nullable: true, onDelete:"cascade")]
+    #[ORM\JoinColumn(name: 'parent_id', referencedColumnName: 'id', nullable: true, onDelete: "cascade")]
     protected ?RoleInterface $parent = null;
 
     public function __construct()
@@ -35,7 +35,8 @@ abstract class Role extends Node implements RoleInterface
 
     public function addPermission(PermissionInterface $permission): RoleInterface
     {
-        if (!$this->permissions->contains($permission)) {
+        if (!$this->permissions->contains($permission))
+        {
             $this->permissions->add($permission);
         }
 

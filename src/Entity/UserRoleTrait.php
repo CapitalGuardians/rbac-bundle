@@ -10,8 +10,8 @@ use PhpRbacBundle\Repository\UserRoleRepository;
 #[ORM\Entity(repositoryClass: UserRoleRepository::class)]
 trait UserRoleTrait
 {
-    #[ORM\ManyToMany(targetEntity: RoleInterface::class, cascade:['persist', 'remove', 'refresh'])]
-    #[ORM\JoinTable(name: "user_role")]
+    #[ORM\ManyToMany(targetEntity: RoleInterface::class, cascade: ['persist', 'remove', 'refresh'])]
+    #[ORM\JoinTable(name: "user_roles")]
     #[ORM\JoinColumn(name: "user_id", referencedColumnName: "id", onDelete: "cascade")]
     #[ORM\InverseJoinColumn(name: "role_id", referencedColumnName: "id", onDelete: "cascade")]
     private Collection $rbacRoles;
@@ -31,7 +31,8 @@ trait UserRoleTrait
 
     public function addRbacRole(RoleInterface $role): void
     {
-        if (!$this->rbacRoles->contains($role)) {
+        if (!$this->rbacRoles->contains($role))
+        {
             $this->rbacRoles[] = $role;
         }
     }
