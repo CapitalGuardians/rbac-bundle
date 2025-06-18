@@ -14,6 +14,7 @@ use PhpRbacBundle\Entity\PermissionInterface;
 use PhpRbacBundle\Core\Manager\NodeManagerInterface;
 use PhpRbacBundle\Exception\RbacRoleNotFoundException;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
+use PhpRbacBundle\Core\RolePermissionCheckerInterface;
 
 /**
  * @method Role|null find($id, $lockMode = null, $lockVersion = null)
@@ -214,14 +215,10 @@ class RoleRepository extends ServiceEntityRepository implements NestedSetInterfa
         return $result;
     }
 
-    public function deletePermissions(Role $role): Role
-    {
-        $role->setPermissions(null);
-        $this->add($role, true);
-
-        return $role;
-    }
-
+    /**
+     * @deprecated This method is deprecated and will be removed in a future version.
+     * Use RolePermissionCheckerInterface::hasPermission() instead.
+     */
     public function hasPermission(int $roleId, int $permissionId): bool
     {
         $pdo = $this->getEntityManager()->getConnection();

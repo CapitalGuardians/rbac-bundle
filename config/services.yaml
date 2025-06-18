@@ -21,3 +21,9 @@ services:
     PhpRbacBundle\Repository\RoleRepository:
         arguments:
             $entityClass: '%php_rbac.resolve_target_entities.role%'
+
+    # Default permission checker implementation
+    PhpRbacBundle\Core\DefaultRolePermissionChecker: ~
+    
+    # Alias the interface to the default implementation
+    PhpRbacBundle\Core\RolePermissionCheckerInterface: '@PhpRbacBundle\Core\DefaultRolePermissionChecker'
